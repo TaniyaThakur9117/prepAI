@@ -18,11 +18,12 @@
 // app/dashboard/page.jsx (server)
 import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import {redirect} from "next/navigation";
 
 export default async function Dashboard() {
   const { userId } = auth();
   if (!userId) {
-    redirect("/sign-in");
+    redirect('/auth/SignIn');
   }
 
   const { data: attempts } = await supabaseAdmin
