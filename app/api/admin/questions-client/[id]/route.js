@@ -1,4 +1,60 @@
-//app/api/admin/questions-client/[id]/route.js
+// //app\api\admin\questions-client\[id]\route.js
+// import { createClient } from "@supabase/supabase-js";
+// import { NextResponse } from "next/server";
+
+// const supabase = createClient(
+//   process.env.NEXT_PUBLIC_SUPABASE_URL,
+//   process.env.SUPABASE_SERVICE_ROLE_KEY
+// );
+
+// function isAdmin(email) {
+//   const adminEmails = process.env.ADMIN_EMAILS;
+//   if (!adminEmails) return false;
+//   return adminEmails
+//     .split(",")
+//     .map((e) => e.trim().toLowerCase())
+//     .includes(email?.toLowerCase());
+// }
+
+// export async function DELETE(request, { params }) {
+//   const { id } = params;
+//   const userEmail = request.headers.get("x-user-email");
+
+//   if (!isAdmin(userEmail)) {
+//     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+//   }
+
+//   try {
+//     // Check hr table first
+//     const { data: hrRow, error: hrError } = await supabase
+//       .from("hr_questions")
+//       .select("id")
+//       .eq("id", id)
+//       .single();
+
+//     if (hrError && hrError.code !== "PGRST116") { // PGRST116 = no row found
+//       return NextResponse.json({ error: hrError.message }, { status: 500 });
+//     }
+
+//     if (hrRow) {
+//       const { error } = await supabase.from("hr_questions").delete().eq("id", id);
+//       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+//       return NextResponse.json({ success: true });
+//     }
+
+//     // Otherwise delete from questions
+//     const { error } = await supabase.from("questions").delete().eq("id", id);
+//     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+//     return NextResponse.json({ success: true });
+//   } catch (err) {
+//     console.error("DELETE /questions-client/[id] error:", err);
+//     return NextResponse.json({ error: err.message || "Server error" }, { status: 500 });
+//   }
+// }
+
+
+
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
@@ -8,285 +64,104 @@ const supabase = createClient(
 );
 
 function isAdmin(email) {
-  // Get admin emails from environment variable
   const adminEmails = process.env.ADMIN_EMAILS;
-  
-  if (!adminEmails) {
-    console.warn("ADMIN_EMAILS environment variable not set");
-    return false;
-  }
-  
-  // Split by comma and trim whitespace, then convert to lowercase for comparison
-  const adminEmailList = adminEmails
-    .split(',')
-    .map(email => email.trim().toLowerCase());
-  
-  return email && adminEmailList.includes(email.toLowerCase());
+  if (!adminEmails) return false;
+
+  return adminEmails
+    .split(",")
+    .map(e => e.trim().toLowerCase())
+    .includes(email?.toLowerCase());
 }
 
-export async function DELETE(request, { params }) {
+export async function DELETE(request, context) {
   try {
-    console.log("=== CLIENT AUTH DELETE START ===");
-    
-    const { id } = params;
-    
-    // Get user email from headers
+    const { id } = await context.params;
+
     const userEmail = request.headers.get("x-user-email");
     const userId = request.headers.get("x-user-id");
-    
-    console.log("User email from headers:", userEmail);
-    console.log("User ID from headers:", userId);
-    console.log("Question ID to delete:", id);
-    
+
     if (!userEmail || !userId) {
-      return NextResponse.json({ error: "Missing user information" }, { status: 401 });
+      return NextResponse.json({ error: "Missing user info" }, { status: 401 });
     }
-    
+
     if (!isAdmin(userEmail)) {
-      console.log("User is not admin:", userEmail);
-      return NextResponse.json({ error: "Not authorized as admin" }, { status: 403 });
+      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
-    
+
     if (!id) {
-      return NextResponse.json({ error: "Question ID is required" }, { status: 400 });
+      return NextResponse.json({ error: "Missing question ID" }, { status: 400 });
     }
-    
-    console.log("User is admin, deleting question...");
-    
-    // First, get the question from main table to know its type and content
-    const { data: questionData, error: fetchError } = await supabase
+
+    /* ===============================
+       1️⃣ HR DELETE (UUID BASED)
+    =============================== */
+    const { data: hrDeleted } = await supabase
+      .from("hr_questions")
+      .delete()
+      .eq("id", id)
+      .select();
+
+    if (hrDeleted?.length > 0) {
+      return NextResponse.json({
+        success: true,
+        table: "hr_questions"
+      });
+    }
+
+    /* ===============================
+       2️⃣ FETCH MAIN QUESTION
+    =============================== */
+    const { data: question, error: fetchError } = await supabase
       .from("questions")
       .select("*")
       .eq("id", id)
       .single();
 
-    if (fetchError) {
-      console.error("Error fetching question:", fetchError);
-      return NextResponse.json({ error: "Failed to fetch question", details: fetchError.message }, { status: 500 });
-    }
-
-    if (!questionData) {
+    if (fetchError || !question) {
       return NextResponse.json({ error: "Question not found" }, { status: 404 });
     }
 
-    console.log("Question data:", questionData);
-    const questionType = questionData.type;
-    const questionText = questionData.question;
-    console.log("Question type:", questionType);
-    console.log("Question text:", questionText);
+    const { type, question: questionText } = question;
 
-    // Map question types to their respective tables
+    /* ===============================
+       3️⃣ DELETE FROM TYPE TABLE
+       (TEXT MATCH – SCHEMA LIMITATION)
+    =============================== */
     const typeTableMap = {
-      'aptitude': 'aptitude_questions',
-      'eq': 'eq_questions',
-      'interview': 'interview_questions',
-      'iq': 'iq_questions',
-      'technical': 'technical_mcq'
+      aptitude: "aptitude_questions",
+      iq: "iq_questions",
+      technical: "technical_mcq",
+      eq: "eq_questions",
+      interview: "interview_questions"
     };
 
-    let deletedFromTypeTable = false;
-    let typeTableUsed = null;
+    const typeTable = typeTableMap[type];
 
-    // Delete from type-specific table first
-    const typeTableName = typeTableMap[questionType];
-    if (typeTableName) {
-      console.log(`Attempting to delete from ${typeTableName} table...`);
-      
-      try {
-        // Since these are independent tables, we need to find the record by question text
-        // or any other matching criteria, not by ID
-        const { data: typeRecords, error: searchError } = await supabase
-          .from(typeTableName)
-          .select("*")
-          .eq("question", questionText); // Match by question text
-
-        if (searchError) {
-          console.error(`Error searching in ${typeTableName}:`, searchError);
-        } else if (typeRecords && typeRecords.length > 0) {
-          console.log(`Found ${typeRecords.length} matching records in ${typeTableName}:`, typeRecords);
-          
-          // Delete all matching records (should typically be just one)
-          for (const record of typeRecords) {
-            const { error: typeDeleteError } = await supabase
-              .from(typeTableName)
-              .delete()
-              .eq("id", record.id);
-
-            if (typeDeleteError) {
-              console.error(`Error deleting record ${record.id} from ${typeTableName}:`, typeDeleteError);
-            } else {
-              console.log(`Successfully deleted record ${record.id} from ${typeTableName}`);
-              deletedFromTypeTable = true;
-              typeTableUsed = typeTableName;
-            }
-          }
-        } else {
-          console.log(`No matching records found in ${typeTableName} for question: "${questionText}"`);
-        }
-      } catch (tableError) {
-        console.error(`Error with table ${typeTableName}:`, tableError);
-      }
-    } else {
-      console.warn(`Unknown question type: ${questionType}`);
+    if (typeTable) {
+      await supabase
+        .from(typeTable)
+        .delete()
+        .eq("question", questionText); // ⚠ schema limitation
     }
 
-    // Delete from main questions table
-    console.log("Deleting from main questions table...");
-    const { data, error } = await supabase
+    /* ===============================
+       4️⃣ DELETE FROM MAIN TABLE
+    =============================== */
+    await supabase
       .from("questions")
       .delete()
-      .eq("id", id)
-      .select()
-      .single();
+      .eq("id", id);
 
-    if (error) {
-      console.error("Supabase delete error:", error);
-      return NextResponse.json({ error: "Failed to delete question", details: error.message }, { status: 500 });
-    }
-
-    console.log("Successfully deleted question:", id);
-    return NextResponse.json({ 
-      success: true, 
-      message: deletedFromTypeTable 
-        ? "Question deleted successfully from both main and type-specific tables" 
-        : "Question deleted from main table only (no matching record found in type-specific table)", 
-      data,
-      typeTableInfo: {
-        deletedFromTypeTable,
-        typeTableUsed,
-        questionType,
-        searchedBy: "question text"
-      }
+    return NextResponse.json({
+      success: true,
+      deletedFrom: ["questions", typeTable].filter(Boolean)
     });
-    
+
   } catch (err) {
-    console.error("Error in client auth DELETE:", err);
-    return NextResponse.json({ error: "Server error", details: err.message }, { status: 500 });
-  }
-}
-
-export async function PUT(request, { params }) {
-  try {
-    console.log("=== CLIENT AUTH PUT START ===");
-    
-    const { id } = params;
-    
-    // Get user email from headers
-    const userEmail = request.headers.get("x-user-email");
-    const userId = request.headers.get("x-user-id");
-    
-    console.log("User email from headers:", userEmail);
-    console.log("User ID from headers:", userId);
-    console.log("Question ID to update:", id);
-    
-    if (!userEmail || !userId) {
-      return NextResponse.json({ error: "Missing user information" }, { status: 401 });
-    }
-    
-    if (!isAdmin(userEmail)) {
-      console.log("User is not admin:", userEmail);
-      return NextResponse.json({ error: "Not authorized as admin" }, { status: 403 });
-    }
-    
-    if (!id) {
-      return NextResponse.json({ error: "Question ID is required" }, { status: 400 });
-    }
-    
-    console.log("User is admin, updating question...");
-    
-    const body = await request.json();
-    console.log("Request body:", body);
-    
-    const { question, options, correct_option, type, category, difficulty, is_text_question } = body;
-
-    // Validation
-    if (!question || !type) {
-      return NextResponse.json({ 
-        error: "Missing required fields: question, type" 
-      }, { status: 400 });
-    }
-
-    // Prepare update data
-    const updateData = {
-      question,
-      type,
-      category: category || null,
-      difficulty: difficulty || null,
-      is_text_question: is_text_question || false
-    };
-
-    // Add options and correct_option only if they exist (for MCQ questions)
-    if (options && Array.isArray(options)) {
-      updateData.options = options;
-      updateData.correct_option = parseInt(correct_option) || 1;
-    }
-
-    const { data, error } = await supabase
-      .from("questions")
-      .update(updateData)
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Supabase update error:", error);
-      return NextResponse.json({ error: "Failed to update question", details: error.message }, { status: 500 });
-    }
-
-    console.log("Successfully updated question:", id);
-    return NextResponse.json({ success: true, data });
-    
-  } catch (err) {
-    console.error("Error in client auth PUT:", err);
-    return NextResponse.json({ error: "Server error", details: err.message }, { status: 500 });
-  }
-}
-
-export async function GET(request, { params }) {
-  try {
-    console.log("=== CLIENT AUTH GET SINGLE START ===");
-    
-    const { id } = params;
-    
-    // Get user email from headers
-    const userEmail = request.headers.get("x-user-email");
-    const userId = request.headers.get("x-user-id");
-    
-    console.log("User email from headers:", userEmail);
-    console.log("User ID from headers:", userId);
-    console.log("Question ID to fetch:", id);
-    
-    if (!userEmail || !userId) {
-      return NextResponse.json({ error: "Missing user information" }, { status: 401 });
-    }
-    
-    if (!isAdmin(userEmail)) {
-      console.log("User is not admin:", userEmail);
-      return NextResponse.json({ error: "Not authorized as admin" }, { status: 403 });
-    }
-    
-    if (!id) {
-      return NextResponse.json({ error: "Question ID is required" }, { status: 400 });
-    }
-    
-    console.log("User is admin, fetching question...");
-    
-    const { data, error } = await supabase
-      .from("questions")
-      .select("*")
-      .eq("id", id)
-      .single();
-
-    if (error) {
-      console.error("Supabase fetch error:", error);
-      return NextResponse.json({ error: "Failed to fetch question", details: error.message }, { status: 500 });
-    }
-
-    console.log("Successfully fetched question:", id);
-    return NextResponse.json(data);
-    
-  } catch (err) {
-    console.error("Error in client auth GET SINGLE:", err);
-    return NextResponse.json({ error: "Server error", details: err.message }, { status: 500 });
+    console.error("DELETE ERROR:", err);
+    return NextResponse.json(
+      { error: err.message || "Server error" },
+      { status: 500 }
+    );
   }
 }

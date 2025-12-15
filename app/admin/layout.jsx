@@ -150,7 +150,7 @@ export default function AdminLayout({ children }) {
         <div className="max-w-6xl mx-auto p-4 flex items-center justify-between">
           <h1 className="text-xl font-bold">Admin Panel</h1>
           <nav className="space-x-4">
-            <a href="/admin" className="text-sm text-blue-600 hover:underline">Dashboard</a>
+            <a href="/admin" className="text-sm text-blue-600 hover:underline">Admin Dashboard</a>
             <a href="/admin/questions" className="text-sm text-blue-600 hover:underline">Manage Questions</a>
             <a href="/admin/performance" className="text-sm text-blue-600 hover:underline">Performance</a>
           </nav>

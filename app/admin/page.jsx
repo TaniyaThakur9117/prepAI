@@ -34,7 +34,7 @@ export default function AdminHome() {
                 Manage Questions
               </h3>
               <p className="text-gray-600 leading-relaxed">
-                Add, update, or delete questions for all rounds. Create engaging content for your users.
+                Add or delete questions for all rounds. Create engaging content for your users.
               </p>
               <div className="mt-4 flex items-center text-purple-600 font-medium">
                 <span>Get started</span>
