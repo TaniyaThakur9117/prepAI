@@ -447,7 +447,7 @@ export default function DashboardLayout({ children }) {
 
         {/* User Section */}
         <div className={`${isSidebarOpen ? 'p-6' : 'p-4'} border-t border-purple-100/50 space-y-4`}>
-          {/* Settings Button */}
+          {/* Settings Button
           <Link 
             href="/dashboard/settings"
             className={`flex items-center gap-3 px-4 py-2 text-gray-600 hover:bg-purple-50/50 rounded-lg transition-colors text-sm ${
@@ -457,7 +457,7 @@ export default function DashboardLayout({ children }) {
           >
             <Settings size={16} />
             {isSidebarOpen && <span>Settings</span>}
-          </Link>
+          </Link> */}
           
           {/* User Info */}
           <div className={`flex items-center ${isSidebarOpen ? 'justify-between' : 'justify-center'} p-3 bg-gradient-to-r from-purple-50/50 to-blue-50/50 rounded-xl border border-purple-100/30`}>
