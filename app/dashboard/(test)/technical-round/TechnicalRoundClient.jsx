@@ -2732,9 +2732,9 @@ export default function TechnicalRoundClient() {
                       <div className={`text-sm font-medium ${isDark ? 'text-gray-200' : 'text-gray-900'}`}>
                         Question {currentIndex + 1} of {getSectionData().length}
                       </div>
-                      <div className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {/* <div className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                         {Object.keys(mcqAnswers).length + Object.keys(debugAnswers).length + Object.keys(codingAnswers).length}/{totalQuestions} attempted
-                      </div>
+                      </div> */}
                     </div>
 
                     <button
